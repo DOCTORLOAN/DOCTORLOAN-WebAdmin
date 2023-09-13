@@ -1,0 +1,40 @@
+{
+  "COMMON.WAITING": "Vui lòng chờ...",
+  "COMMON.CREATE": "Tạo",
+  "COMMON.UPDATE": "Cập nhật",
+
+  "COMMON.VALIDATION.FORMAT_PASSWORD": "Mật khẩu phải có ít nhất 8 ký tự, ít nhất một chữ cái, một số và một ký tự đặc biệt",
+  "COMMON.VALIDATION.INVALID": "{name} không hợp lệ",
+  "COMMON.VALIDATION.REQUIRED": "{name} là bắt buộc",
+  "COMMON.VALIDATION.MIN": "{name} phải có ít nhất {number} ký tự",
+  "COMMON.VALIDATION.MAX": "{name} không được vượt quá {number} ký tự",
+  "COMMON.VALIDATION.DOES_NOT_MATCH": "{name_1} không khớp với {name_2}",
+
+  "SIGNING.TITLE": "ĐĂNG NHẬP HỆ THỐNG QUẢN TRỊ",
+  "SIGNING.USERNAME": "Tên tài khoản",
+  "SIGNING.PASSWORD": "Mật khẩu",
+  "SIGNING.BTN_REGISTER": "đăng nhập",
+  "SIGNING.FORGET_PASS": "quên mật khẩu?",
+  "SIGNING.VALIDATION.LOGIN_FAILED": "Tên người dùng hoặc mật khẩu không chính xác.",
+
+  "USER.TITLE": "Thành viên",
+  "USER.CODE": "Mã thành viên",
+  "USER.ROLE": "Chức Vụ",
+  "USER.FIRSTNAME": "Họ",
+  "USER.LASTNAME": "Tên",
+  "USER.NAME": "Họ và tên",
+  "USER.EMAIL": "Email",
+  "USER.PHONE": "Số điện thoại",
+  "USER.GENDER": "Giới tính",
+  "USER.MALE": "Nam",
+  "USER.FEMALE": "Nữ",
+  "USER.DOB": "Ngày sinh",
+  "USER.PASSWORD": "Mật khẩu",
+  "USER.CONFIRM_PASSWORD": "Xác nhận mật khẩu",
+  "USER.ADDRESS": "Địa chỉ",
+  "USER.TAB_INFOR": "Thông tin",
+  "USER.TAB_NOTIFY": "Thông báo",
+  "USER.TAB_ROLE": "Vai Trò",
+
+  "MENU.DASHBOARD": "Dashboard"
+}

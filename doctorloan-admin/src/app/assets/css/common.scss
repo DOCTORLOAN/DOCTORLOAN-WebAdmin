@@ -1,0 +1,71 @@
+$main-logo: #ff7500;
+
+.app-sidebar-logo {
+  justify-content: center;
+}
+
+.app-sidebar-logo-default {
+  width: 110px;
+}
+
+.app-sidebar-logo-minimize {
+  width: 40px;
+}
+
+.w-120px {
+  width: 120px;
+}
+
+.fancy-spinner {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 10rem;
+  height: 10rem;
+
+  div {
+    position: absolute;
+    width: 8rem;
+    height: 8rem;
+    border-radius: 50%;
+
+    &.ring {
+      border-width: 1rem;
+      border-style: solid;
+      border-color: transparent;
+      animation: 1s fancy infinite alternate;
+
+      &:nth-child(1) {
+        border-left-color: $main-logo;
+        border-right-color: $main-logo;
+      }
+
+      &:nth-child(2) {
+        border-top-color: $main-logo;
+        border-bottom-color: $main-logo;
+        animation-delay: 0.5s;
+      }
+    }
+
+    &.dot {
+      width: 2rem;
+      height: 2rem;
+      background: $main-logo;
+    }
+  }
+}
+
+@media only screen and (min-width: 992px) {
+  #kt_app_content {
+    min-height: calc(100vh - 60px - 80px - 70px);
+  }
+}
+
+@keyframes fancy {
+  to {
+    transform: rotate(360deg) scale(0.5);
+  }
+}
+.tox .tox-editor-header {
+  z-index: 0 !important;
+}

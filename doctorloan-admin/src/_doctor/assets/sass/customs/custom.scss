@@ -1,0 +1,41 @@
+// react datepicker
+.react-datepicker-wrapper {
+  width: 100%;
+}
+.thumbs-container {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  .thumb {
+    display: inline-flex;
+    border-radius: 2px;
+    border: 1px solid #eaeaea;
+    margin-bottom: 8px;
+    margin-right: 8px;
+    width: 200px;
+    height: 200px;
+    padding: 4px;
+    box-sizing: border-box;
+  }
+  .thumb-inner {
+    display: flex;
+    min-width: 0;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .img {
+    display: block;
+    width: auto;
+    height: 100%;
+  }
+}
+.fixed-btn {
+  position: fixed;
+  right: 42px;
+  z-index: 100;
+}
+.pointer {
+  cursor: pointer !important;
+}
