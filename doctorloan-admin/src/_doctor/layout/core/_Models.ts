@@ -163,6 +163,12 @@ export interface IMegaMenu extends ILayoutComponent {
   display: boolean
 }
 
+export interface IMenuItem extends ILayoutComponent {
+  title: string;
+  path: string;
+  roles?: string[]; // List role
+}
+
 export interface ISidebarPanel extends ILayoutComponent {
   componentName?: 'sidebar-panel'
   display: boolean

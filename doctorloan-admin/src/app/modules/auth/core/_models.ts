@@ -61,6 +61,7 @@ export interface UserModel {
   companyName?: string
   phone?: string
   phoneCode?: string
+  roleId?: number
   roleName?: string
   roles?: Array<number>
   avatar?: string
