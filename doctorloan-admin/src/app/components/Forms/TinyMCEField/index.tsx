@@ -61,7 +61,7 @@ function _TinyMCEFieldFormHook<TFormType extends FieldValues = FieldValues>(
           props.setValue && props.setValue(props.name, content as any)
           props.onChange && props.onChange(content)
         }}
-        apiKey='vf3umhtpen2z00qnpa7vay5yg8ku63ffst0xu9epfhcfwm2y'
+        apiKey='laxmb855al91qutlfakhl2q82xhtgailabbej3hxps1gtnlt'
         onInit={(evt, editor) => ((editorRef as any).current = editor)}
         initialValue={props.value || ''}
         init={{

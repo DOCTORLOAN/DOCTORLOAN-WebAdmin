@@ -1,17 +1,22 @@
-import {toAbsoluteUrl} from 'src/_doctor/helpers'
-import OrderProduct from './OrderProduct'
-import {OrderForm} from '@/types/Orders/order.model'
-import {formatDateSever} from 'src/app/utils/commons/date'
-import TextFieldFormHook from 'src/app/components/Forms/Input'
-import {Control} from 'react-hook-form'
-import {OrderPaymentMethod} from 'src/app/utils/enums/status.eneum'
+import { toAbsoluteUrl } from 'src/_doctor/helpers';
+import OrderProduct from './OrderProduct';
+import { OrderForm } from '@/types/Orders/order.model';
+import { formatDateSever } from 'src/app/utils/commons/date';
+import TextFieldFormHook from 'src/app/components/Forms/Input';
+import { Control } from 'react-hook-form';
+import { OrderPaymentMethod } from 'src/app/utils/enums/status.eneum';
 
 type Props = {
-  order: OrderForm
-  control: Control<OrderForm, any>
-}
+  order: OrderForm;
+  control: Control<OrderForm, any>;
+};
 
-const Information = ({order, control}: Props) => {
+const Information = ({ order, control }: Props) => {
+  // Hàm thay thế dấu gạch dưới bằng khoảng trắng
+  const replaceUnderscores = (str: string): string => {
+    return str.replace(/_/g, ' ');
+  };
+
   return (
     <div className='d-flex flex-column gap-7 gap-lg-10'>
       <div className='d-flex flex-column flex-xl-row gap-7 gap-lg-10'>
@@ -47,7 +52,7 @@ const Information = ({order, control}: Props) => {
                     </td>
                     <td className='fw-bold text-end'>
                       {order.paymentMethod
-                        ? OrderPaymentMethod[order.paymentMethod].replaceAll('_', ' ')
+                        ? replaceUnderscores(OrderPaymentMethod[order.paymentMethod])
                         : ''}
                     </td>
                   </tr>
@@ -58,25 +63,18 @@ const Information = ({order, control}: Props) => {
         </div>
 
         <div className='card card-flush py-4 flex-row-fluid'>
-          {/* begin::Card header*/}
           <div className='card-header'>
             <div className='card-title'>
               <h2>Thông tin khách hàng</h2>
             </div>
           </div>
-          {/* end::Card header*/}
-          {/* begin::Card body*/}
           <div className='card-body pt-0'>
             <div className='table-responsive'>
-              {/* begin::Table*/}
               <table className='table align-middle table-row-bordered mb-0 fs-6 gy-5 min-w-300px'>
-                {/* begin::Table body*/}
                 <tbody className='fw-semibold text-gray-600'>
-                  {/* begin::Customer name*/}
                   <tr key='customer-name'>
                     <td className='text-muted'>
                       <div className='d-flex align-items-center'>
-                        {/* begin::Svg Icon | path: icons/duotune/communication/com006.svg*/}
                         <span className='svg-icon svg-icon-2 me-2'>
                           <i className='bi bi-person-circle fs-4 mr-2'></i>
                         </span>
@@ -177,7 +175,7 @@ const Information = ({order, control}: Props) => {
         </div>
       </div>
     </div>
-  )
-}
+  );
+};
 
-export default Information
+export default Information;

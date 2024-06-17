@@ -27,4 +27,5 @@ export enum OrderStatusEnum {
 export enum OrderPaymentMethod {
   Thanh_toán_khi_nhận_hàng = 1,
   Chuyển_khoản = 2,
+  Payoo = 3,
 }
