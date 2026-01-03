@@ -1,0 +1,714 @@
+name: CI Pipeline - Code Quality, Security, Performance & React Validation
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+    branches:
+      - '**'
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: '18.x'
+  PROJECT_ROOT: 'doctorloan-admin'
+
+jobs:
+  # Job 1: Code Quality & Formatting (React-specific)
+  code-quality:
+    name: Code Quality & Formatting
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: ${{ env.PROJECT_ROOT }}/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ${{ env.PROJECT_ROOT }}
+        run: npm ci
+
+      - name: Check Code Formatting (Prettier)
+        id: format-check
+        working-directory: ${{ env.PROJECT_ROOT }}
+        run: |
+          echo "Checking code formatting with Prettier..."
+          set +e
+          npm run lint > format-output.txt 2>&1
+          FORMAT_EXIT_CODE=${PIPESTATUS[0]}
+          set -e
+          
+          if [ $FORMAT_EXIT_CODE -ne 0 ]; then
+            echo "format_failed=true" >> $GITHUB_OUTPUT
+            echo "❌ Code formatting check failed"
+            cat format-output.txt
+          else
+            echo "format_failed=false" >> $GITHUB_OUTPUT
+            echo "✅ Code formatting is correct"
+          fi
+
+      - name: Run ESLint
+        id: eslint-check
+        working-directory: ${{ env.PROJECT_ROOT }}
+        run: |
+          echo "Running ESLint..."
+          set +e
+          npx eslint . --ext .js,.jsx,.ts,.tsx --format json --output-file eslint-report.json 2>&1 | tee eslint-output.txt || true
+          ESLINT_EXIT_CODE=${PIPESTATUS[0]}
+          set -e
+          
+          if [ -f "eslint-report.json" ]; then
+            ESLINT_ERRORS=$(jq '[.[] | .errorCount] | add' eslint-report.json 2>/dev/null || echo "0")
+            ESLINT_WARNINGS=$(jq '[.[] | .warningCount] | add' eslint-report.json 2>/dev/null || echo "0")
+            echo "eslint_errors=$ESLINT_ERRORS" >> $GITHUB_OUTPUT
+            echo "eslint_warnings=$ESLINT_WARNINGS" >> $GITHUB_OUTPUT
+            
+            if [ "$ESLINT_ERRORS" -gt 0 ]; then
+              echo "❌ ESLint found $ESLINT_ERRORS error(s) and $ESLINT_WARNINGS warning(s)"
+            elif [ "$ESLINT_WARNINGS" -gt 0 ]; then
+              echo "⚠️ ESLint found $ESLINT_WARNINGS warning(s)"
+            else
+              echo "✅ ESLint passed with no errors or warnings"
+            fi
+          else
+            echo "eslint_errors=0" >> $GITHUB_OUTPUT
+            echo "eslint_warnings=0" >> $GITHUB_OUTPUT
+            echo "⚠️ ESLint report not generated"
+          fi
+
+      - name: TypeScript Type Checking
+        id: typescript-check
+        working-directory: ${{ env.PROJECT_ROOT }}
+        run: |
+          echo "Running TypeScript type checking..."
+          set +e
+          npx tsc --noEmit 2>&1 | tee typescript-output.txt
+          TSC_EXIT_CODE=${PIPESTATUS[0]}
+          set -e
+          
+          if [ $TSC_EXIT_CODE -ne 0 ]; then
+            echo "typescript_errors=true" >> $GITHUB_OUTPUT
+            echo "❌ TypeScript type checking failed"
+            exit 1
+          else
+            echo "typescript_errors=false" >> $GITHUB_OUTPUT
+            echo "✅ TypeScript type checking passed"
+          fi
+
+      - name: Check Code Smells
+        id: code-smells
+        working-directory: ${{ env.PROJECT_ROOT }}
+        run: |
+          echo "Checking for code smells..."
+          
+          TODO_COUNT=$(grep -r "TODO\|FIXME\|HACK\|XXX" --include="*.ts" --include="*.tsx" --include="*.js" --include="*.jsx" src/ 2>/dev/null | wc -l || echo "0")
+          CONSOLE_LOGS=$(grep -r "console\.log\|console\.warn\|console\.error" --include="*.ts" --include="*.tsx" --include="*.js" --include="*.jsx" src/ 2>/dev/null | wc -l || echo "0")
+          DEBUGGER_STATEMENTS=$(grep -r "debugger" --include="*.ts" --include="*.tsx" --include="*.js" --include="*.jsx" src/ 2>/dev/null | wc -l || echo "0")
+          
+          echo "todo_count=$TODO_COUNT" >> $GITHUB_OUTPUT
+          echo "console_logs=$CONSOLE_LOGS" >> $GITHUB_OUTPUT
+          echo "debugger_statements=$DEBUGGER_STATEMENTS" >> $GITHUB_OUTPUT
+          
+          # Export code smell findings
+          cat > code-smell-findings.json << EOF
+          [
+            $([ "$TODO_COUNT" -gt 0 ] && echo "{\"type\":\"todo\",\"title\":\"TODO/FIXME comments found\",\"count\":$TODO_COUNT,\"severity\":\"low\"}," || echo "")
+            $([ "$CONSOLE_LOGS" -gt 0 ] && echo "{\"type\":\"console_log\",\"title\":\"Console.log statements found\",\"count\":$CONSOLE_LOGS,\"severity\":\"low\"}," || echo "")
+            $([ "$DEBUGGER_STATEMENTS" -gt 0 ] && echo "{\"type\":\"debugger\",\"title\":\"Debugger statements found\",\"count\":$DEBUGGER_STATEMENTS,\"severity\":\"medium\"}" || echo "")
+          ]
+          EOF
+
+      - name: Upload Code Quality Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-quality-logs
+          path: |
+            ${{ env.PROJECT_ROOT }}/format-output.txt
+            ${{ env.PROJECT_ROOT }}/eslint-output.txt
+            ${{ env.PROJECT_ROOT }}/eslint-report.json
+            ${{ env.PROJECT_ROOT }}/typescript-output.txt
+            ${{ env.PROJECT_ROOT }}/code-smell-findings.json
+          retention-days: 7
+
+  # Job 2: Build & Bundle Analysis
+  build-analysis:
+    name: Build & Bundle Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: []  # Chạy độc lập
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: ${{ env.PROJECT_ROOT }}/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ${{ env.PROJECT_ROOT }}
+        run: npm ci
+
+      - name: Build Application
+        id: build
+        working-directory: ${{ env.PROJECT_ROOT }}
+        run: |
+          echo "Building application..."
+          set +e
+          npm run build 2>&1 | tee build-output.txt
+          BUILD_EXIT_CODE=${PIPESTATUS[0]}
+          set -e
+          
+          if [ $BUILD_EXIT_CODE -ne 0 ]; then
+            echo "build_failed=true" >> $GITHUB_OUTPUT
+            echo "❌ Build failed"
+            cat build-output.txt
+            exit 1
+          else
+            echo "build_failed=false" >> $GITHUB_OUTPUT
+            echo "✅ Build succeeded"
+          fi
+
+      - name: Analyze Bundle Size
+        id: bundle-analysis
+        working-directory: ${{ env.PROJECT_ROOT }}
+        run: |
+          echo "Analyzing bundle size..."
+          
+          if [ -d "build/static/js" ]; then
+            # Calculate total bundle size
+            TOTAL_SIZE=$(du -sb build/static/js | cut -f1)
+            TOTAL_SIZE_MB=$(echo "scale=2; $TOTAL_SIZE / 1024 / 1024" | bc)
+            
+            # Count chunks
+            CHUNK_COUNT=$(find build/static/js -name "*.js" | wc -l)
+            
+            # Find largest chunks
+            LARGEST_CHUNKS=$(find build/static/js -name "*.js" -exec du -h {} + | sort -rh | head -5)
+            
+            echo "total_size_bytes=$TOTAL_SIZE" >> $GITHUB_OUTPUT
+            echo "total_size_mb=$TOTAL_SIZE_MB" >> $GITHUB_OUTPUT
+            echo "chunk_count=$CHUNK_COUNT" >> $GITHUB_OUTPUT
+            
+            echo "📦 Bundle Analysis:"
+            echo "  Total Size: ${TOTAL_SIZE_MB} MB"
+            echo "  Chunk Count: $CHUNK_COUNT"
+            echo ""
+            echo "  Largest Chunks:"
+            echo "$LARGEST_CHUNKS"
+            
+            # Check for bundle size warnings (> 5MB)
+            if (( $(echo "$TOTAL_SIZE_MB > 5" | bc -l) )); then
+              echo "⚠️ Bundle size exceeds 5MB threshold"
+              echo "bundle_size_warning=true" >> $GITHUB_OUTPUT
+            else
+              echo "✅ Bundle size is within acceptable limits"
+              echo "bundle_size_warning=false" >> $GITHUB_OUTPUT
+            fi
+            
+            # Save bundle analysis
+            cat > bundle-analysis.json << EOF
+          {
+            "total_size_bytes": $TOTAL_SIZE,
+            "total_size_mb": $TOTAL_SIZE_MB,
+            "chunk_count": $CHUNK_COUNT,
+            "largest_chunks": "$(echo "$LARGEST_CHUNKS" | head -3 | tr '\n' '; ')"
+          }
+          EOF
+          else
+            echo "⚠️ Build directory not found"
+            echo "bundle_size_warning=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check for Build Warnings
+        id: build-warnings
+        working-directory: ${{ env.PROJECT_ROOT }}
+        run: |
+          echo "Checking for build warnings..."
+          
+          if [ -f "build-output.txt" ]; then
+            WARNINGS=$(grep -i "warning" build-output.txt | wc -l || echo "0")
+            ERRORS=$(grep -i "error" build-output.txt | grep -v "error:" | wc -l || echo "0")
+            
+            echo "build_warnings=$WARNINGS" >> $GITHUB_OUTPUT
+            echo "build_errors=$ERRORS" >> $GITHUB_OUTPUT
+            
+            if [ "$WARNINGS" -gt 0 ]; then
+              echo "⚠️ Found $WARNINGS build warning(s)"
+            fi
+            
+            if [ "$ERRORS" -gt 0 ]; then
+              echo "❌ Found $ERRORS build error(s)"
+            fi
+          fi
+
+      - name: Upload Build Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            ${{ env.PROJECT_ROOT }}/build-output.txt
+            ${{ env.PROJECT_ROOT }}/bundle-analysis.json
+            ${{ env.PROJECT_ROOT }}/build/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # Job 3: Security Scanning
+  security-scan:
+    name: Security Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+      issues: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: ${{ env.PROJECT_ROOT }}/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ${{ env.PROJECT_ROOT }}
+        run: npm ci
+
+      - name: Run npm audit
+        id: npm-audit
+        working-directory: ${{ env.PROJECT_ROOT }}
+        run: |
+          echo "Running npm audit..."
+          set +e
+          npm audit --audit-level=moderate --json > npm-audit.json 2>&1 || true
+          AUDIT_EXIT_CODE=${PIPESTATUS[0]}
+          set -e
+          
+          if [ -f "npm-audit.json" ]; then
+            VULNERABILITIES=$(jq '.metadata.vulnerabilities.total' npm-audit.json 2>/dev/null || echo "0")
+            CRITICAL=$(jq '.metadata.vulnerabilities.critical' npm-audit.json 2>/dev/null || echo "0")
+            HIGH=$(jq '.metadata.vulnerabilities.high' npm-audit.json 2>/dev/null || echo "0")
+            MODERATE=$(jq '.metadata.vulnerabilities.moderate' npm-audit.json 2>/dev/null || echo "0")
+            
+            echo "vulnerabilities=$VULNERABILITIES" >> $GITHUB_OUTPUT
+            echo "critical=$CRITICAL" >> $GITHUB_OUTPUT
+            echo "high=$HIGH" >> $GITHUB_OUTPUT
+            echo "moderate=$MODERATE" >> $GITHUB_OUTPUT
+            
+            if [ "$VULNERABILITIES" -gt 0 ]; then
+              echo "⚠️ Found $VULNERABILITIES vulnerability/vulnerabilities"
+              echo "  Critical: $CRITICAL"
+              echo "  High: $HIGH"
+              echo "  Moderate: $MODERATE"
+            else
+              echo "✅ No vulnerabilities found"
+            fi
+          fi
+
+      - name: Scan for Hardcoded Secrets
+        id: secret-scan
+        working-directory: ${{ env.PROJECT_ROOT }}
+        run: |
+          echo "Scanning for hardcoded secrets..."
+          
+          # Patterns to detect secrets
+          SECRET_PATTERNS=(
+            "password\s*[=:]\s*[\"'][^\"']+[\"']"
+            "api[_-]?key\s*[=:]\s*[\"'][^\"']+[\"']"
+            "secret\s*[=:]\s*[\"'][^\"']+[\"']"
+            "token\s*[=:]\s*[\"'][^\"']+[\"']"
+            "apikey\s*[=:]\s*[\"'][^\"']+[\"']"
+            "REACT_APP_.*SECRET"
+            "REACT_APP_.*KEY"
+            "REACT_APP_.*PASSWORD"
+          )
+          
+          SECRETS_FOUND=()
+          
+          for pattern in "${SECRET_PATTERNS[@]}"; do
+            while IFS=: read -r file line content; do
+              # Skip node_modules, build, and .env files (expected to have placeholders)
+              if ! echo "$file" | grep -qE "(node_modules|build|\.env|package-lock\.json)"; then
+                SECRETS_FOUND+=("$file:$line:$content")
+              fi
+            done < <(grep -rnE "$pattern" --include="*.ts" --include="*.tsx" --include="*.js" --include="*.jsx" src/ 2>/dev/null || true)
+          done
+          
+          SECRET_COUNT=${#SECRETS_FOUND[@]}
+          echo "secret_count=$SECRET_COUNT" >> $GITHUB_OUTPUT
+          
+          # Export findings as JSON
+          if [ "$SECRET_COUNT" -gt 0 ]; then
+            cat > secret-findings.json << EOF
+          [
+            $(for i in "${!SECRETS_FOUND[@]}"; do
+              item="${SECRETS_FOUND[$i]}"
+              parts=(${item//:/ })
+              file="${parts[0]}"
+              line="${parts[1]}"
+              content="${parts[@]:2}"
+              echo "{\"type\":\"hardcoded_secret\",\"title\":\"Hardcoded secret found in $file\",\"file\":\"$file\",\"line\":\"$line\",\"description\":\"Potential hardcoded secret: ${content:0:100}\",\"severity\":\"critical\"}"
+              [ $i -lt $((${#SECRETS_FOUND[@]} - 1)) ] && echo ","
+            done)
+          ]
+          EOF
+          else
+            echo "[]" > secret-findings.json
+          fi
+          
+          if [ "$SECRET_COUNT" -gt 0 ]; then
+            echo "⚠️ Found $SECRET_COUNT potential hardcoded secret(s)"
+          else
+            echo "✅ No hardcoded secrets detected"
+          fi
+
+      - name: Check for Outdated Dependencies
+        id: outdated-deps
+        working-directory: ${{ env.PROJECT_ROOT }}
+        run: |
+          echo "Checking for outdated dependencies..."
+          npm outdated --json > outdated-deps.json 2>&1 || true
+          
+          if [ -f "outdated-deps.json" ] && [ -s "outdated-deps.json" ]; then
+            OUTDATED_COUNT=$(jq 'length' outdated-deps.json 2>/dev/null || echo "0")
+            echo "outdated_count=$OUTDATED_COUNT" >> $GITHUB_OUTPUT
+            
+            if [ "$OUTDATED_COUNT" -gt 0 ]; then
+              echo "⚠️ Found $OUTDATED_COUNT outdated package(s)"
+            else
+              echo "✅ All packages are up to date"
+            fi
+          else
+            echo "outdated_count=0" >> $GITHUB_OUTPUT
+            echo "✅ All packages are up to date"
+          fi
+
+      - name: Combine Security Findings
+        working-directory: ${{ env.PROJECT_ROOT }}
+        run: |
+          echo "Combining security findings..."
+          node -e "
+            const fs = require('fs');
+            const audit = JSON.parse(fs.readFileSync('npm-audit.json', 'utf8') || '{}');
+            const secrets = JSON.parse(fs.readFileSync('secret-findings.json', 'utf8') || '[]');
+            
+            const vulnerabilities = audit.vulnerabilities || {};
+            const vulnFindings = Object.keys(vulnerabilities).map(pkg => {
+              const vuln = vulnerabilities[pkg];
+              return {
+                type: 'vulnerable_package',
+                category: 'security',
+                title: \`Vulnerable package: \${pkg}\`,
+                description: \`Package \${pkg} has \${vuln.vulnerabilities?.length || 0} vulnerability/vulnerabilities\`,
+                recommendation: 'Update package to latest secure version',
+                severity: vuln.severity === 'critical' ? 'critical' : vuln.severity === 'high' ? 'high' : 'medium'
+              };
+            });
+            
+            const allFindings = [...secrets, ...vulnFindings];
+            fs.writeFileSync('security-findings.json', JSON.stringify(allFindings, null, 2));
+            console.log(\`Combined \${allFindings.length} security findings\`);
+          "
+
+      - name: Upload Security Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-logs
+          path: |
+            ${{ env.PROJECT_ROOT }}/npm-audit.json
+            ${{ env.PROJECT_ROOT }}/secret-findings.json
+            ${{ env.PROJECT_ROOT }}/outdated-deps.json
+            ${{ env.PROJECT_ROOT }}/security-findings.json
+          retention-days: 7
+
+  # Job 4: Testing
+  testing:
+    name: Testing
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: []  # Chạy độc lập
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: ${{ env.PROJECT_ROOT }}/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ${{ env.PROJECT_ROOT }}
+        run: npm ci
+
+      - name: Run Tests
+        id: run-tests
+        working-directory: ${{ env.PROJECT_ROOT }}
+        run: |
+          echo "Running tests..."
+          set +e
+          npm test -- --watchAll=false --coverage --coverageReporters=json --coverageReporters=text 2>&1 | tee test-output.txt
+          TEST_EXIT_CODE=${PIPESTATUS[0]}
+          set -e
+          
+          if [ $TEST_EXIT_CODE -ne 0 ]; then
+            echo "tests_failed=true" >> $GITHUB_OUTPUT
+            echo "❌ Tests failed"
+            exit 1
+          else
+            echo "tests_failed=false" >> $GITHUB_OUTPUT
+            echo "✅ All tests passed"
+          fi
+
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            ${{ env.PROJECT_ROOT }}/test-output.txt
+            ${{ env.PROJECT_ROOT }}/coverage/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # Job 5: Performance Analysis
+  performance-analysis:
+    name: Performance Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: []  # Chạy độc lập
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: ${{ env.PROJECT_ROOT }}/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ${{ env.PROJECT_ROOT }}
+        run: npm ci
+
+      - name: Analyze Code Complexity & Performance
+        id: complexity
+        working-directory: ${{ env.PROJECT_ROOT }}
+        run: |
+          echo "Analyzing code complexity and performance patterns..."
+          
+          # Check for large files
+          LARGE_FILES=$(find src -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx" | xargs wc -l | awk '$1 > 500 {print $2}' | wc -l || echo "0")
+          
+          # Check for inline styles (performance issue)
+          INLINE_STYLES=$(grep -r "style=\{" --include="*.tsx" --include="*.jsx" src/ 2>/dev/null | wc -l || echo "0")
+          
+          # Check for missing React.memo
+          MISSING_MEMO=$(grep -r "export.*function\|export.*const.*=" --include="*.tsx" --include="*.jsx" src/ | grep -v "React.memo\|memo" | wc -l || echo "0")
+          
+          # Count total files
+          TS_FILES=$(find src -name "*.ts" -o -name "*.tsx" | wc -l)
+          TOTAL_LINES=$(find src -name "*.ts" -o -name "*.tsx" | xargs wc -l 2>/dev/null | tail -1 | awk '{print $1}' || echo "0")
+          
+          echo "large_files=$LARGE_FILES" >> $GITHUB_OUTPUT
+          echo "inline_styles=$INLINE_STYLES" >> $GITHUB_OUTPUT
+          echo "missing_memo=$MISSING_MEMO" >> $GITHUB_OUTPUT
+          echo "ts_files=$TS_FILES" >> $GITHUB_OUTPUT
+          echo "total_lines=$TOTAL_LINES" >> $GITHUB_OUTPUT
+          
+          # Create performance findings JSON
+          cat > performance-findings.json << EOF
+          [
+            $([ "$LARGE_FILES" -gt 0 ] && echo "{\"type\":\"large_files\",\"title\":\"Large files found (>500 lines)\",\"count\":$LARGE_FILES,\"severity\":\"enhancement\",\"recommendation\":\"Consider splitting large files into smaller, more maintainable units\"}," || echo "")
+            $([ "$INLINE_STYLES" -gt 0 ] && echo "{\"type\":\"inline_styles\",\"title\":\"Inline styles found\",\"count\":$INLINE_STYLES,\"severity\":\"low\",\"recommendation\":\"Consider using CSS modules or styled-components for better performance\"}," || echo "")
+            $([ "$MISSING_MEMO" -gt 0 ] && echo "{\"type\":\"missing_memo\",\"title\":\"Components without React.memo\",\"count\":$MISSING_MEMO,\"severity\":\"low\",\"recommendation\":\"Consider using React.memo for components that don't need frequent re-renders\"}" || echo "")
+          ]
+          EOF
+
+      - name: Upload Performance Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-logs
+          path: |
+            ${{ env.PROJECT_ROOT }}/performance-findings.json
+          retention-days: 7
+
+  # Job 6: Create GitHub Issues
+  create-issues:
+    name: Create GitHub Issues
+    runs-on: ubuntu-latest
+    needs: [code-quality, security-scan, performance-analysis]
+    if: always() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*-logs'
+          merge-multiple: false
+          path: artifacts
+
+      - name: Setup GitHub CLI
+        run: |
+          type gh >/dev/null 2>&1 || { echo "GitHub CLI not installed, installing..."; sudo apt-get update && sudo apt-get install -y gh; }
+          echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3 python3-pip jq || true
+
+      - name: Create Security Issues
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -f "artifacts/security-logs/security-findings.json" ]; then
+            echo "Processing security findings..."
+            # Placeholder: Add script to create issues from security findings
+            echo "Security issues creation script needed"
+          else
+            echo "No security issues to create"
+          fi
+
+      - name: Create Performance Issues
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -f "artifacts/performance-logs/performance-findings.json" ]; then
+            echo "Processing performance findings..."
+            # Placeholder: Add script to create issues from performance findings
+            echo "Performance issues creation script needed"
+          else
+            echo "No performance issues to create"
+          fi
+
+  # Job 7: Generate Final Report
+  generate-report:
+    name: Generate Quality Report
+    runs-on: ubuntu-latest
+    needs: [code-quality, build-analysis, security-scan, testing, performance-analysis]
+    if: always()
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*-logs'
+          merge-multiple: false
+          path: artifacts
+
+      - name: Generate Summary Report
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          # 📊 Comprehensive Code Quality & React Validation Report
+          
+          ## 🔍 Code Quality
+          EOF
+          
+          if [ -f "artifacts/code-quality-logs/eslint-report.json" ]; then
+            ESLINT_ERRORS=$(jq '[.[] | .errorCount] | add' artifacts/code-quality-logs/eslint-report.json || echo "0")
+            ESLINT_WARNINGS=$(jq '[.[] | .warningCount] | add' artifacts/code-quality-logs/eslint-report.json || echo "0")
+            echo "- **ESLint Errors:** $ESLINT_ERRORS" >> $GITHUB_STEP_SUMMARY
+            echo "- **ESLint Warnings:** $ESLINT_WARNINGS" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          
+          ## 🏗️ Build Analysis
+          EOF
+          
+          if [ -f "artifacts/build-artifacts/bundle-analysis.json" ]; then
+            BUNDLE_SIZE=$(jq -r '.total_size_mb' artifacts/build-artifacts/bundle-analysis.json || echo "0")
+            CHUNK_COUNT=$(jq -r '.chunk_count' artifacts/build-artifacts/bundle-analysis.json || echo "0")
+            echo "- **Bundle Size:** ${BUNDLE_SIZE} MB" >> $GITHUB_STEP_SUMMARY
+            echo "- **Chunk Count:** $CHUNK_COUNT" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          
+          ## 🔒 Security Analysis
+          EOF
+          
+          if [ -f "artifacts/security-logs/security-findings.json" ]; then
+            SECURITY_ISSUES=$(jq 'length' artifacts/security-logs/security-findings.json || echo "0")
+            CRITICAL=$(jq '[.[] | select(.severity == "critical")] | length' artifacts/security-logs/security-findings.json || echo "0")
+            HIGH=$(jq '[.[] | select(.severity == "high")] | length' artifacts/security-logs/security-findings.json || echo "0")
+            echo "- **Total Security Issues:** $SECURITY_ISSUES" >> $GITHUB_STEP_SUMMARY
+            echo "- **Critical:** $CRITICAL" >> $GITHUB_STEP_SUMMARY
+            echo "- **High:** $HIGH" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          
+          ## ⚡ Performance Analysis
+          EOF
+          
+          if [ -f "artifacts/performance-logs/performance-findings.json" ]; then
+            PERF_ISSUES=$(jq 'length' artifacts/performance-logs/performance-findings.json || echo "0")
+            echo "- **Total Performance Issues:** $PERF_ISSUES" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          
+          ## 🧪 Testing
+          EOF
+          
+          if [ -f "artifacts/test-results/test-output.txt" ]; then
+            if grep -q "Tests:" artifacts/test-results/test-output.txt; then
+              echo "- **Test Status:** ✅ Tests executed" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "- **Test Status:** ⚠️ Test results not found" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+          
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          
+          ---
+          *Report generated automatically by CI Pipeline*
+          EOF
+
+      - name: Fail on Critical Issues
+        if: always() && (needs.code-quality.result != 'success' || needs.build-analysis.result != 'success')
+        run: |
+          echo "❌ Build or code quality checks failed. Please review and fix errors."
+          exit 1
+
